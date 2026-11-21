@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# fzf stub: saves the received list and picks line $FZF_PICK (default 1).
+n=$(cat "$STUB_DIR/fzf.n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$STUB_DIR/fzf.n"
+in=$(cat); printf '%s\n' "$in" > "$STUB_DIR/fzf.$n.in"
+pick=$(sed -n "${FZF_PICK:-1}p" <<<"$in")
+case " $* " in
+  *--print-query*) key=""
+                   # Like real fzf: the Tab key is only reported if it was requested with --expect=tab
+                   case " $* " in *" --expect=tab "*) [ "$n" = "${FZF_TAB_ON:-0}" ] && key=tab;; esac
+                   printf '%s\n%s\n%s\n' "${FZF_QUERY:-}" "$key" "$pick";;
+  *) echo "$pick";;
+esac

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# ssh stub for the tests. Logs the call to $STUB_LOG.
+echo "ssh $*" >> "${STUB_LOG:-/dev/null}"
+[ -n "${FAKE_SSH_FAIL:-}" ] && { echo "ssh: Could not resolve hostname fake" >&2; exit 255; }
+args="$*"
+case "$args" in
+  *basename*)   echo "${FAKE_REMOTE_SHELL:-bash}";;
+  *"grep -qF"*) exit "${FAKE_GREP_RC:-1}";;
+  *"bash -s"*)  cat >/dev/null
+                printf 'HOME=/home/test\n/home/test/proj one\n/home/test/api\n/opt/app\n';;
+  *"cat >>"*)   cat > "${STUB_APPENDED:-/dev/null}";;
+  *)            cat >/dev/null 2>&1 || true;;
+esac

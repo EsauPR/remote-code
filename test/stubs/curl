@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# curl stub: fake "latest release" API and fake installer.
+echo "curl $*" >> "${STUB_LOG:-/dev/null}"
+case "$*" in
+  *releases/latest*) [ -n "${FAKE_NO_RELEASE:-}" ] && exit 22
+                     printf '{\n  "tag_name": "%s",\n  "name": "x"\n}\n' "${FAKE_LATEST:-v9.9.9}";;
+  *install.sh*)      printf '#!/usr/bin/env bash\necho "INSTALLER REF=$RCODE_REF ARGS=$*"\n';;
+esac

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+{ printf 'zed'; printf ' [%s]' "$@"; echo; } >> "${STUB_LOG:-/dev/null}"

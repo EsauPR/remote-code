@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# rcode — open VS Code (Remote-SSH) on a folder of a host from ~/.ssh/config.
+# Usage: rcode [host] [path]
+#   RCODE_EXCLUDE="a b"  hosts to hide from the picker (also in ~/.config/rcode/config)
+#   RCODE_EDITOR=zed     open in Zed (or run as `rzed`)
+set -u
+
+VERSION="0.1.0"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/rcode/config"
+# shellcheck disable=SC1090
+[ -r "$CONFIG" ] && . "$CONFIG"
+EXCLUDE=" ${RCODE_EXCLUDE:-} "
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/rcode"
+HIST="$STATE_DIR/history"
+HIST_MAX=50
+SSH_CONFIG="$HOME/.ssh/config"
+
+usage() {
+  cat <<EOT
+rcode $VERSION — open VS Code or Zed over SSH on a folder of a server.
+
+Usage: rcode [host] [path]    (rzed = same, but opens Zed)
+  No arguments: pick a host (from ~/.ssh/config) and a folder with fzf.
+  In the folder picker: Enter opens · Tab enters the folder.
+
+Update: rcode --update [--yes]   (installs the latest GitHub release)
+Other:  rcode --version | --help
+
+Variables: RCODE_EXCLUDE, RCODE_EDITOR · Optional config: $CONFIG
+EOT
+}
+
+die()  { printf 'rcode: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'rcode: ⚠ %s\n' "$*" >&2; }
+
+# rcode --update: compare with the latest GitHub release and re-run its installer.
+update_self() {
+  local repo="${RCODE_REPO:-EsauPR/remote-code}" yes=0 tty="${RCODE_TTY:-/dev/tty}"
+  [ "${1:-}" = "--yes" ] && yes=1
+  command -v curl >/dev/null 2>&1 || die "curl is required for --update."
+  local api="${RCODE_API_URL:-https://api.github.com/repos/$repo/releases/latest}" json latest
+  json=$(curl -fsSL "$api") || die "could not query the latest release ($api)."
+  latest=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$json" | head -n1)
+  [ -n "$latest" ] || die "no releases published yet for $repo."
+  # up to date if the installed version is >= the latest one
+  if [ "$(printf '%s\n%s\n' "$VERSION" "${latest#v}" | sort -V | tail -n1)" = "$VERSION" ]; then
+    echo "rcode $VERSION is up to date (latest release: $latest)."; return 0
+  fi
+  echo "rcode $VERSION → $latest"
+  if [ "$yes" != 1 ]; then
+    local ans; printf 'Download and run the installer of %s? [y/N] ' "$latest" >&2
+    read -r ans <"$tty" || exit 1
+    case "$ans" in y|Y|yes|YES) ;; *) echo "cancelled." >&2; exit 1;; esac
+  fi
+  # install where this script lives: <prefix>/bin/rcode
+  local self bindir prefix=""
+  self=$(readlink -f "$0" 2>/dev/null || echo "$0"); bindir=$(dirname "$self")
+  [ "$(basename "$bindir")" = bin ] && prefix=$(dirname "$bindir")
+  local raw="${RCODE_RAW_URL:-https://raw.githubusercontent.com/$repo}/$latest/install.sh"
+  curl -fsSL "$raw" | RCODE_REF="$latest" RCODE_REPO="$repo" bash -s -- ${prefix:+--prefix "$prefix"}
+}
+
+case "${1:-}" in
+  -h|--help)    usage; exit 0;;
+  -V|--version) echo "rcode $VERSION"; exit 0;;
+  --update)     shift; update_self "$@"; exit $?;;
+esac
+
+command -v fzf  >/dev/null 2>&1 || die "fzf is not installed (e.g. sudo dnf install fzf | brew install fzf)."
+# editor: `rzed` (symlink) or RCODE_EDITOR=zed → Zed; VS Code by default
+case "${RCODE_EDITOR:-${0##*/}}" in zed|rzed) editor=zed;; *) editor=code;; esac
+if [ "$editor" = zed ]; then
+  command -v zed >/dev/null 2>&1 || die "'zed' is not in PATH (it is usually in ~/.local/bin)."
+else
+  command -v code >/dev/null 2>&1 || die "'code' is not in PATH (in VS Code: Command Palette → 'Shell Command: Install code in PATH')."
+fi
+command -v ssh  >/dev/null 2>&1 || die "ssh is not installed."
+[ -r "$SSH_CONFIG" ] || die "cannot read $SSH_CONFIG"
+mkdir -p "$STATE_DIR"; touch "$HIST"
+
+# ---- hosts from ~/.ssh/config (with recursive Include, no wildcards) ----
+parse_config() {
+  local file="$1" line key rest p f
+  [ -r "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    read -r key rest <<<"$line" || true
+    case "${key,,}" in
+      host)
+        local -a pats; read -r -a pats <<<"$rest"   # array: avoids globbing '*'
+        for p in "${pats[@]}"; do
+          case "$p" in *[\*\?\!]*) continue;; esac
+          [[ "$EXCLUDE" == *" $p "* ]] && continue
+          printf '%s\n' "$p"
+        done;;
+      include)
+        for p in $rest; do
+          p="${p/#\~/$HOME}"
+          [[ "$p" = /* ]] || p="$HOME/.ssh/$p"
+          # shellcheck disable=SC2086
+          for f in $p; do [ -f "$f" ] && parse_config "$f"; done
+        done;;
+    esac
+  done <"$file"
+}
+
+# recent hosts first, then the rest (no duplicates)
+list_hosts() {
+  { cut -f1 "$HIST"; parse_config "$SSH_CONFIG"; } | awk 'NF && !seen[$0]++' |
+    while IFS= read -r h; do
+      # only hosts actually present in the config
+      parse_config "$SSH_CONFIG" | grep -qxF -- "$h" && printf '%s\n' "$h"
+    done
+}
+
+host="${1:-}"
+path="${2:-}"
+
+if [ -z "$host" ]; then
+  host=$(list_hosts | fzf --prompt='host> ' --height=40% --reverse) || exit 130
+  [ -n "$host" ] || exit 130
+fi
+
+# ---- remote candidates (a single connection; ControlMaster reuses it) ----
+if [ -z "$path" ]; then
+  read -r -d '' REMOTE <<'EOS' || true
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+echo "HOME=$HOME"
+if command -v zoxide >/dev/null 2>&1; then
+  zoxide query -l 2>/dev/null
+else
+  echo "__NOZOXIDE__"
+fi
+if ! command -v find >/dev/null 2>&1; then echo "__NOFIND__"; exit 0; fi
+for d in "$HOME" /srv /opt /var/www; do
+  [ -d "$d" ] && find "$d" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2>/dev/null
+done
+find "$HOME" -maxdepth 3 -name .git -type d -prune \
+  -not -path '*/node_modules/*' -not -path '*/.*/*' 2>/dev/null | sed 's#/\.git$##'
+echo "$HOME"
+EOS
+  out=$(printf '%s\n' "$REMOTE" | ssh -o ConnectTimeout=8 "$host" 'bash -s' 2>"$STATE_DIR/ssh.err")
+  rc=$?
+  if [ $rc -ne 0 ]; then
+    err=$(tail -n 3 "$STATE_DIR/ssh.err")
+    die "could not connect to '$host' (ssh exited with $rc)${err:+: $err}"
+  fi
+  rhome=$(sed -n 's/^HOME=//p' <<<"$out" | head -n1)
+  if grep -qx '__NOFIND__' <<<"$out"; then
+    warn "$host: has neither 'find' nor 'zoxide'; install one (zoxide recommended)."
+  elif grep -qx '__NOZOXIDE__' <<<"$out"; then
+    warn "$host: zoxide is not installed; only default folders are listed. Install it on the server for better results (e.g. apt/dnf/brew install zoxide)."
+  fi
+  remote_list=$(grep -vE '^(HOME=|__NO(ZOXIDE|FIND)__$)' <<<"$out")
+
+  # recents for this host first, then the rest
+  recents=$(awk -F'\t' -v h="$host" '$1==h {print $2}' "$HIST")
+  list=$({ printf '%s\n' "$recents"; printf '%s\n' "$remote_list"; } | awk 'NF && !s[$0]++')
+  header='Enter: open · Tab: enter the folder · if nothing matches, what you typed is used'
+  cur=""
+  while :; do
+    sel=$(printf '%s\n' "$list" |
+          fzf --prompt="$host:${cur:-path}> " --height=50% --reverse \
+              --print-query --expect=tab --header="$header") || true
+    # with --print-query and --expect: 1=typed text, 2=key (empty on Enter), 3=selection
+    query=$(sed -n '1p' <<<"$sel"); key=$(sed -n '2p' <<<"$sel"); chosen=$(sed -n '3p' <<<"$sel")
+    path="${chosen:-$query}"
+    [ -n "$path" ] || exit 130
+    case "$path" in
+      "~")   path="$rhome";;
+      "~/"*) path="$rhome/${path#\~/}";;
+    esac
+    [ "$key" = "tab" ] || break
+    # enter: list the (resolved) folder + its parent + subfolders
+    sub=$(printf 'cd -- %q 2>/dev/null || exit 3\npwd -P\nfind "$PWD" -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | sort\n' "$path" |
+          ssh -o ConnectTimeout=8 "$host" 'bash -s' 2>/dev/null) || { warn "cannot enter '$path'"; continue; }
+    cur=$(sed -n '1p' <<<"$sub")
+    parent=$(dirname -- "$cur")
+    list=$({ printf '%s\n' "$cur"; [ "$parent" != "$cur" ] && printf '%s\n' "$parent"; sed '1d' <<<"$sub"; } | awk 'NF && !s[$0]++')
+  done
+fi
+
+# ---- history (most recent first, no duplicates, max HIST_MAX) ----
+tmp=$(mktemp)
+{ printf '%s\t%s\n' "$host" "$path"; cat "$HIST"; } | awk '!s[$0]++' | head -n "$HIST_MAX" >"$tmp" && mv "$tmp" "$HIST"
+
+echo "rcode: $host:$path ($editor)"
+if [ "$editor" = zed ]; then
+  # ssh://host/path URL with the path percent-encoded
+  enc=""; LC_ALL=C
+  for ((i = 0; i < ${#path}; i++)); do
+    c="${path:$i:1}"
+    case "$c" in [a-zA-Z0-9/._~-]) enc+="$c";; *) enc+=$(printf '%%%02X' "'$c");; esac
+  done
+  exec zed "ssh://$host$enc"
+fi
+exec code --remote "ssh-remote+$host" "$path"
