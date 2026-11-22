@@ -5,7 +5,7 @@
 #   RCODE_EDITOR=zed     open in Zed (or run as `rzed`)
 set -u
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/rcode/config"
 # shellcheck disable=SC1090
 [ -r "$CONFIG" ] && . "$CONFIG"
