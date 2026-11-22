@@ -180,6 +180,23 @@ EOS
   done
 fi
 
+# pct_encode STRING → percent-encoded bytes (keeps / . _ ~ - and alphanumerics).
+# Works on raw bytes via od, so it does not depend on the locale or bash version.
+pct_encode() {
+  local hex b n i out=""
+  hex=$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | tr 'a-f' 'A-F')
+  for ((i = 0; i < ${#hex}; i += 2)); do
+    b="${hex:$i:2}"; n=$((16#$b))
+    if (( (n >= 48 && n <= 57) || (n >= 65 && n <= 90) || (n >= 97 && n <= 122) \
+          || n == 45 || n == 46 || n == 47 || n == 95 || n == 126 )); then
+      out+=$(printf "\\x$b")
+    else
+      out+="%$b"
+    fi
+  done
+  printf '%s' "$out"
+}
+
 # ---- history (most recent first, no duplicates, max HIST_MAX) ----
 tmp=$(mktemp)
 { printf '%s\t%s\n' "$host" "$path"; cat "$HIST"; } | awk '!s[$0]++' | head -n "$HIST_MAX" >"$tmp" && mv "$tmp" "$HIST"
@@ -187,11 +204,7 @@ tmp=$(mktemp)
 echo "rcode: $host:$path ($editor)"
 if [ "$editor" = zed ]; then
   # ssh://host/path URL with the path percent-encoded
-  enc=""; LC_ALL=C
-  for ((i = 0; i < ${#path}; i++)); do
-    c="${path:$i:1}"
-    case "$c" in [a-zA-Z0-9/._~-]) enc+="$c";; *) enc+=$(printf '%%%02X' "'$c");; esac
-  done
+  enc=$(pct_encode "$path")
   exec zed "ssh://$host$enc"
 fi
 exec code --remote "ssh-remote+$host" "$path"

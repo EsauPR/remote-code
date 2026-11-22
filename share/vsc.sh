@@ -4,6 +4,23 @@
 # (defaults to the current directory). Prints the local command to run, copies it
 # to the local clipboard (OSC 52) and shows a clickable link (OSC 8).
 
+# pct_encode STRING → percent-encoded bytes (keeps / . _ ~ - and alphanumerics).
+# Works on raw bytes via od, so it does not depend on the locale or bash version.
+pct_encode() {
+  local hex b n i out=""
+  hex=$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | tr 'a-f' 'A-F')
+  for ((i = 0; i < ${#hex}; i += 2)); do
+    b="${hex:$i:2}"; n=$((16#$b))
+    if (( (n >= 48 && n <= 57) || (n >= 65 && n <= 90) || (n >= 97 && n <= 122) \
+          || n == 45 || n == 46 || n == 47 || n == 95 || n == 126 )); then
+      out+=$(printf "\\x$b")
+    else
+      out+="%$b"
+    fi
+  done
+  printf '%s' "$out"
+}
+
 # _vsc_open <vscode|zed> [path]
 _vsc_open() {
   local editor="$1"
@@ -14,17 +31,9 @@ _vsc_open() {
   local p="${2:-$PWD}"
   p=$(cd -- "$p" 2>/dev/null && pwd -P) || { echo "vsc: does not exist: ${2:-$PWD}" >&2; return 1; }
 
-  local cmd uri label enc="" c i q
-  q=$(printf '%q' "$p")   # before setting LC_ALL, so that ñ is not escaped as \303\261
-  # percent-encode the path for URLs (keeps / and safe characters)
-  local LC_ALL=C
-  for ((i = 0; i < ${#p}; i++)); do
-    c="${p:$i:1}"
-    case "$c" in
-      [a-zA-Z0-9/._~-]) enc+="$c" ;;
-      *) enc+=$(printf '%%%02X' "'$c") ;;
-    esac
-  done
+  local cmd uri label enc q
+  q=$(printf '%q' "$p")
+  enc=$(pct_encode "$p")
 
   case "$editor" in
     zed)

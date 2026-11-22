@@ -17,8 +17,9 @@ run_in() { bash -c 'source "$1/share/vsc.sh"; shift; "$@"' _ "$ROOT" "$@"; }
 }
 
 @test "OSC 52 contains the command in base64" {
+  T=$(cd /tmp && pwd -P)   # /tmp is a symlink to /private/tmp on macOS
   b64=$(run_in vsz /tmp 2>/dev/null | head -1 | sed 's/^.*52;c;//; s/\x07.*//')
-  [ "$(printf '%s' "$b64" | base64 -d)" = "zed ssh://srv/tmp" ]
+  [ "$(printf '%s' "$b64" | base64 -d)" = "zed ssh://srv$T" ]
 }
 
 @test "errors: no VSC_HOST and nonexistent path" {
@@ -28,6 +29,7 @@ run_in() { bash -c 'source "$1/share/vsc.sh"; shift; "$@"' _ "$ROOT" "$@"; }
 
 @test "also works in zsh" {
   command -v zsh >/dev/null || skip "zsh not installed"
+  T=$(cd /tmp && pwd -P)   # /tmp is a symlink to /private/tmp on macOS
   run zsh -c 'source "$1/share/vsc.sh"; vsz /tmp' _ "$ROOT"
-  [ "$status" -eq 0 ]; [[ "$output" == *"zed ssh://srv/tmp"* ]]
+  [ "$status" -eq 0 ]; [[ "$output" == *"zed ssh://srv$T"* ]]
 }
