@@ -85,15 +85,15 @@ parse_config() {
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%%#*}"
     read -r key rest <<<"$line" || true
-    case "${key,,}" in
-      host)
+    case "$key" in
+      [Hh][Oo][Ss][Tt])
         local -a pats; read -r -a pats <<<"$rest"   # array: avoids globbing '*'
         for p in "${pats[@]}"; do
           case "$p" in *[\*\?\!]*) continue;; esac
           [[ "$EXCLUDE" == *" $p "* ]] && continue
           printf '%s\n' "$p"
         done;;
-      include)
+      [Ii][Nn][Cc][Ll][Uu][Dd][Ee])
         for p in $rest; do
           p="${p/#\~/$HOME}"
           [[ "$p" = /* ]] || p="$HOME/.ssh/$p"
