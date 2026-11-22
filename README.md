@@ -74,15 +74,20 @@ Inside an SSH session, `vsc [path]` (VS Code) or `vsz [path]` (Zed) print the lo
 copy it to your clipboard via **OSC 52** and show a clickable link (**OSC 8**):
 `vscode://vscode-remote/ssh-remote+HOST/path` or `zed://ssh/HOST/path`.
 
-Installing on a server (shows the diff and asks for confirmation; backs up the rc file):
+Install on a server by running this from your local machine. It connects over SSH (`my-host` is the
+server's name in your `~/.ssh/config`), shows the diff, asks for confirmation and backs up the rc file:
 
 ```bash
-./install.sh --server my-host [--alias local-alias] [--zoxide]
+curl -fsSL https://raw.githubusercontent.com/EsauPR/remote-code/main/install.sh | bash -s -- --server my-host
 ```
+
+Options go after `--server my-host`: `--alias local-alias`, `--zoxide`, `--yes`. From a clone it is the same:
+`./install.sh --server my-host [--alias local-alias] [--zoxide]`.
 
 This adds a block between `# >>> rcode >>>` and `# <<< rcode <<<` to the server's `~/.bashrc` (or `.zshrc`)
 with `export VSC_HOST=<alias>` and the `source` of `vsc.sh`. `--zoxide` also adds `zoxide init`.
-To remove it: `./install.sh --server my-host --uninstall`.
+To remove it: `curl -fsSL https://raw.githubusercontent.com/EsauPR/remote-code/main/install.sh | bash -s -- --server my-host --uninstall`
+(or `./install.sh --server my-host --uninstall` from a clone).
 
 Notes: OSC 52 copying depends on your terminal; inside tmux you need
 `set -g allow-passthrough on`.
@@ -98,7 +103,7 @@ It installs into the same prefix `rcode` lives in, and never touches `~/.config/
 To pin a specific version: `curl -fsSL https://raw.githubusercontent.com/EsauPR/remote-code/v0.1.0/install.sh | RCODE_REF=v0.1.0 bash`.
 
 Servers keep their own copy of `vsc.sh`. After updating, refresh each one with
-`./install.sh --server my-host` (if the block is already in the rc file, only `vsc.sh` is replaced).
+the same `--server my-host` command (if the block is already in the rc file, only `vsc.sh` is replaced).
 
 ## Releasing (maintainers)
 
