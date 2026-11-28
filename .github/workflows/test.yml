@@ -20,18 +20,21 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y bats
 
-      - name: Install bats (macOS)
+      - name: Install bats and bash 5 (macOS)
         if: runner.os == 'macOS'
-        run: brew install bats-core
+        run: brew install bats-core bash
 
       - name: Show bash versions
         run: |
           bash --version | head -n1
           /bin/bash --version | head -n1
 
-      # On macOS, /bin/bash is 3.2 (what users get with `#!/usr/bin/env bash`
-      # unless they installed a newer one). Put it first so the tests exercise it.
-      - name: Run tests
+      # macOS's /bin/bash is 3.2: the scripts must refuse it with a clear message.
+      - name: Old bash is rejected (macOS)
+        if: runner.os == 'macOS'
         run: |
-          if [ "$RUNNER_OS" = macOS ]; then export PATH="/bin:$PATH"; fi
-          bats test/
+          if out=$(/bin/bash bin/rcode --version 2>&1); then echo "expected failure"; exit 1; fi
+          echo "$out" | grep -q 'bash >= 5 is required'
+
+      - name: Run tests
+        run: bats test/

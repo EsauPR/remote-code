@@ -20,7 +20,11 @@ git clone https://github.com/EsauPR/remote-code.git && cd remote-code && ./insta
 Installs `rcode` and `rzed` in `~/.local/bin` and `vsc.sh` in `~/.local/share/rcode`
 (`--prefix DIR` to change it, `--uninstall` to remove it).
 
-**Requirements:** `ssh`, [`fzf`](https://github.com/junegunn/fzf) and `code` (VS Code with the Remote-SSH extension) and/or `zed`.
+**Requirements:** **bash ≥ 5**, `ssh`, [`fzf`](https://github.com/junegunn/fzf) and `code` (VS Code with the Remote-SSH extension) and/or `zed`.
+
+macOS ships bash 3.2 (`/bin/bash`), which is **not supported**. Install a current one with
+`brew install bash`; the scripts use `#!/usr/bin/env bash`, so Homebrew's bash is picked up as long as
+it comes first in your `PATH` (your login shell can still be zsh). They exit with a clear message on older versions.
 On the server, [`zoxide`](https://github.com/ajeetdsouza/zoxide) is optional but recommended.
 
 ## Usage
@@ -89,6 +93,8 @@ with `export VSC_HOST=<alias>` and the `source` of `vsc.sh`. `--zoxide` also add
 To remove it: `curl -fsSL https://raw.githubusercontent.com/EsauPR/remote-code/main/install.sh | bash -s -- --server my-host --uninstall`
 (or `./install.sh --server my-host --uninstall` from a clone).
 
+`vsc.sh` also needs bash ≥ 5 (or zsh) on the server; with an older bash it prints a notice and does nothing.
+
 Notes: OSC 52 copying depends on your terminal; inside tmux you need
 `set -g allow-passthrough on`.
 
@@ -117,6 +123,8 @@ With [bats-core](https://github.com/bats-core/bats-core) (they use stubs for `ss
 ```bash
 bats test/
 ```
+
+CI runs them on Linux and macOS (with Homebrew's bash), and checks that macOS's bash 3.2 is rejected.
 
 The tests put stubs of `ssh`, `fzf`, `curl`, `code` and `zed` first in `PATH`, so they never open a real editor or connect anywhere.
 

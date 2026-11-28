@@ -30,6 +30,8 @@ shellcheck bin/rcode share/vsc.sh install.sh scripts/release.sh   # if available
 
 ## Conventions and gotchas
 
+- **Requires bash >= 5.** `rcode` and `install.sh` start with a `BASH_VERSINFO` guard (keep it before any newer syntax);
+  `share/vsc.sh` skips loading on older bash. Bash 4/5 features (`${var,,}`, `printf -v`, `mapfile`, `declare -A`) are fine.
 - Version lives in one place: `VERSION="..."` in `bin/rcode`. `release.sh` greps for the exact line format.
 - Code, comments, messages and docs are in English; user-facing messages are prefixed `rcode:` / `install:`.
 - `rcode` uses `set -u` (not `-e`); failures are handled explicitly with `die`/`warn`.

@@ -13,6 +13,12 @@
 #
 # Without cloning:  curl -fsSL https://raw.githubusercontent.com/EsauPR/remote-code/main/install.sh | bash
 #              curl -fsSL .../install.sh | bash -s -- --server my-host
+
+# Requires bash >= 5 (macOS ships 3.2: brew install bash). Keep this check before any newer syntax.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then
+  printf 'install: bash >= 5 is required (found %s). On macOS: brew install bash, then re-run with that bash.\n' "${BASH_VERSION:-unknown}" >&2
+  exit 1
+fi
 set -euo pipefail
 
 REPO="${RCODE_REPO:-EsauPR/remote-code}"

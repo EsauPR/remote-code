@@ -1,19 +1,25 @@
 # vsc / vsz — for the ~/.bashrc (or .zshrc) of the SERVERS.
 # Requires: export VSC_HOST="<alias in your local ~/.ssh/config>"
 # Usage: vsc [path]   → VS Code      vsz [path]   → Zed
-# (defaults to the current directory). Prints the local command to run, copies it
+# (defaults to the current directory). Requires bash >= 5 (or zsh). Prints the local command to run, copies it
 # to the local clipboard (OSC 52) and shows a clickable link (OSC 8).
 
+# Under bash older than 5, do nothing (without breaking the rc file that sources this).
+if [ -n "${BASH_VERSION:-}" ] && [ "${BASH_VERSINFO[0]}" -lt 5 ]; then
+  echo "vsc: bash >= 5 is required (found $BASH_VERSION); vsc/vsz not loaded." >&2
+  return 0 2>/dev/null
+fi
+
 # pct_encode STRING → percent-encoded bytes (keeps / . _ ~ - and alphanumerics).
-# Works on raw bytes via od, so it does not depend on the locale or bash version.
+# Works on raw bytes via od, so it does not depend on the locale.
 pct_encode() {
-  local hex b n i out=""
+  local hex b c n i out=""
   hex=$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | tr 'a-f' 'A-F')
   for ((i = 0; i < ${#hex}; i += 2)); do
     b="${hex:$i:2}"; n=$((16#$b))
     if (( (n >= 48 && n <= 57) || (n >= 65 && n <= 90) || (n >= 97 && n <= 122) \
           || n == 45 || n == 46 || n == 47 || n == 95 || n == 126 )); then
-      out+=$(printf "\\x$b")
+      printf -v c "\\x$b"; out+=$c
     else
       out+="%$b"
     fi

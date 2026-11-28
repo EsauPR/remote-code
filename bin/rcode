@@ -3,6 +3,12 @@
 # Usage: rcode [host] [path]
 #   RCODE_EXCLUDE="a b"  hosts to hide from the picker (also in ~/.config/rcode/config)
 #   RCODE_EDITOR=zed     open in Zed (or run as `rzed`)
+
+# Requires bash >= 5 (macOS ships 3.2: brew install bash). Keep this check before any newer syntax.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then
+  printf 'rcode: bash >= 5 is required (found %s). On macOS: brew install bash\n' "${BASH_VERSION:-unknown}" >&2
+  exit 1
+fi
 set -u
 
 VERSION="0.1.1"
@@ -85,15 +91,15 @@ parse_config() {
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%%#*}"
     read -r key rest <<<"$line" || true
-    case "$key" in
-      [Hh][Oo][Ss][Tt])
+    case "${key,,}" in
+      host)
         local -a pats; read -r -a pats <<<"$rest"   # array: avoids globbing '*'
         for p in "${pats[@]}"; do
           case "$p" in *[\*\?\!]*) continue;; esac
           [[ "$EXCLUDE" == *" $p "* ]] && continue
           printf '%s\n' "$p"
         done;;
-      [Ii][Nn][Cc][Ll][Uu][Dd][Ee])
+      include)
         for p in $rest; do
           p="${p/#\~/$HOME}"
           [[ "$p" = /* ]] || p="$HOME/.ssh/$p"
@@ -181,15 +187,15 @@ EOS
 fi
 
 # pct_encode STRING → percent-encoded bytes (keeps / . _ ~ - and alphanumerics).
-# Works on raw bytes via od, so it does not depend on the locale or bash version.
+# Works on raw bytes via od, so it does not depend on the locale.
 pct_encode() {
-  local hex b n i out=""
+  local hex b c n i out=""
   hex=$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | tr 'a-f' 'A-F')
   for ((i = 0; i < ${#hex}; i += 2)); do
     b="${hex:$i:2}"; n=$((16#$b))
     if (( (n >= 48 && n <= 57) || (n >= 65 && n <= 90) || (n >= 97 && n <= 122) \
           || n == 45 || n == 46 || n == 47 || n == 95 || n == 126 )); then
-      out+=$(printf "\\x$b")
+      printf -v c "\\x$b"; out+=$c
     else
       out+="%$b"
     fi
